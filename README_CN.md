@@ -754,17 +754,17 @@ response = client.chat.completions.create(
 print(response)
 ```
 
-Citing Hunyuan-MT:
+Citing HY-MT1.5:
 
 ```bibtex
-@misc{hunyuan_mt,
-      title={Hunyuan-MT Technical Report}, 
-      author={Mao Zheng and Zheng Li and Bingxin Qu and Mingyang Song and Yang Du and Mingrui Sun and Di Wang},
+@misc{hy-mt1.5,
+      title={HY-MT1.5 Technical Report}, 
+      author={Mao Zheng and Zheng Li and Tao Chen and Mingyang Song and Di Wang},
       year={2025},
-      eprint={2509.05209},
+      eprint={2512.24092},
       archivePrefix={arXiv},
       primaryClass={cs.CL},
-      url={https://arxiv.org/abs/2509.05209}, 
+      url={https://arxiv.org/abs/2512.24092}, 
 }
 ```
 
