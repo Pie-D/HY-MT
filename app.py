@@ -8,10 +8,11 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 # ================= CONFIG =================
 # Model HY-MT1.5-1.8B đạt 90% hiệu năng Gemini-3.0-Pro [cite: 21]
 MODEL_NAME = "tencent/HY-MT1.5-1.8B" 
+# MODEL_NAME = "tencent/HY-MT1.5-7B" 
 DEVICE = "cuda:0"
-BATCH_SIZE = 16          # Tối ưu cho RTX 4090 [cite: 297]
+BATCH_SIZE = 32          # Tối ưu cho RTX 4090 
 BATCH_TIMEOUT = 0.05     # 50ms để gom đủ batch
-MAX_NEW_TOKENS = 512
+MAX_NEW_TOKENS = 2048
 
 # ================= LOAD MODEL =================
 print("Loading tokenizer...")
@@ -40,20 +41,6 @@ class TranslationReq(BaseModel):
 
 request_queue: asyncio.Queue = asyncio.Queue()
 
-# ================= PROMPT BUILDER =================
-# def build_hy_prompt(req: TranslationReq) -> str:
-#     # Sử dụng format chuẩn xác từ Technical Report để ép mô hình vào chế độ MT
-#     # Thêm ký hiệu kết thúc hướng dẫn rõ ràng
-#     prompt = "User: "
-#     if req.context:
-#         prompt += f"Context: {req.context}\n"
-    
-#     if req.terminology:
-#         terms = ", ".join([f"“{k}”->“{v}”" for k, v in req.terminology.items()])
-#         prompt += f"Terminology: {terms}\n"
-
-#     prompt += f"Translate the following text into {req.tgt}. Output only the translation.\nText: {req.text}\nAssistant: "
-#     return prompt
 def format_messages(req: TranslationReq) -> List[Dict[str, str]]:
     """Xây dựng nội dung tin nhắn theo hướng dẫn của HY-MT [cite: 304, 307]"""
     system_content = "You are a professional translator."
@@ -116,16 +103,22 @@ async def gpu_worker():
         inputs = tokenizer(prompts, return_tensors="pt", padding=True).to(DEVICE)
         if "token_type_ids" in inputs:
             del inputs["token_type_ids"]
+        
+        input_seq_len = inputs.input_ids.shape[1]
+        
+        # Công thức: (Độ dài đầu vào * hệ số giãn nở) + hạn mức bù trừ
+        # Chúng ta giới hạn tối thiểu 32 và tối đa MAX_NEW_TOKENS để an toàn
+        dynamic_max_tokens = min(MAX_NEW_TOKENS, max(32, int(input_seq_len * 1.5) + 20))
+
         with torch.no_grad():
             outputs = model.generate(
                 **inputs,
-                max_new_tokens=MAX_NEW_TOKENS,
+                max_new_tokens=dynamic_max_tokens,
                 do_sample=False,
-                # Tăng penalty để tránh lặp lại "I feel like I'm losing control..."
+                # Tăng penalty để tránh lặp lại 
                 repetition_penalty=1.2, 
                 eos_token_id=tokenizer.eos_token_id,
                 pad_token_id=tokenizer.pad_token_id,
-                # Ép mô hình dừng khi gặp xuống dòng (thường sau bản dịch)
                 forced_eos_token_id=tokenizer.eos_token_id 
             )
         # Chỉ lấy phần text mới được generate
@@ -139,6 +132,7 @@ async def gpu_worker():
             print(f"Translation result: {result}")
             fut.set_result({
                 "translation": result.strip(),
+                "tokens_generated": dynamic_max_tokens,
                 "model": "HY-MT1.5-1.8B"
             })
 
